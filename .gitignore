@@ -1,0 +1,8 @@
+.gradle/
+.idea/
+.vscode/
+.pio/
+build/
+
+esp32/.gitignore
+esp32/data/settings.txt
