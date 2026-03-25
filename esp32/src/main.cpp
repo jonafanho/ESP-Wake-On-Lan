@@ -14,9 +14,10 @@ ESP8266WebServer server(80);
 WebServer server(80);
 #endif
 
-String wifi_ssid = "";
-String wifi_pass = "";
-String target_mac = "";
+String wifiSSID = "";
+String wifiPassword = "";
+String targetMAC = "";
+unsigned long lastWiFiCheck = 0;
 
 WiFiUDP UDP;
 WakeOnLan WOL(UDP);
@@ -38,30 +39,30 @@ bool loadSettings()
 
 	if (file.available())
 	{
-		wifi_ssid = file.readStringUntil('\n');
+		wifiSSID = file.readStringUntil('\n');
 	}
 	if (file.available())
 	{
-		wifi_pass = file.readStringUntil('\n');
+		wifiPassword = file.readStringUntil('\n');
 	}
 	if (file.available())
 	{
-		target_mac = file.readStringUntil('\n');
+		targetMAC = file.readStringUntil('\n');
 	}
 
 	file.close();
-	wifi_ssid.trim();
-	wifi_pass.trim();
-	target_mac.trim();
+	wifiSSID.trim();
+	wifiPassword.trim();
+	targetMAC.trim();
 
-	if (wifi_ssid.length() == 0 || target_mac.length() == 0)
+	if (wifiSSID.length() == 0 || targetMAC.length() == 0)
 	{
 		Serial.println("Settings file is empty or missing data!");
 		return false;
 	}
 
-	Serial.println("SSID: " + wifi_ssid);
-	Serial.println("MAC:  " + target_mac);
+	Serial.println("SSID: " + wifiSSID);
+	Serial.println("MAC:  " + targetMAC);
 	return true;
 }
 
@@ -71,7 +72,7 @@ void checkWiFi()
 	{
 		Serial.print("Connecting to WiFi...");
 		WiFi.mode(WIFI_STA);
-		WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+		WiFi.begin(wifiSSID.c_str(), wifiPassword.c_str());
 
 		unsigned long startAttempt = millis();
 		while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000)
@@ -92,11 +93,32 @@ void checkWiFi()
 	}
 }
 
+String getISOTime()
+{
+	time_t now = time(nullptr);
+	struct tm *timeinfo = gmtime(&now);
+	char buffer[30];
+	strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", timeinfo);
+	return String(buffer);
+}
+
+void handleRoot()
+{
+	String json = "{";
+	json += "\"timestamp\":\"" + getISOTime() + "\"";
+	json += "}";
+	server.send(200, "application/json", json);
+}
+
 void handleWake()
 {
 	Serial.println("Received wake request");
-	WOL.sendMagicPacket(target_mac);
-	server.send(200, "text/plain", "Magic packet sent to " + target_mac);
+	WOL.sendMagicPacket(targetMAC);
+	String json = "{";
+	json += "\"mac\":\"" + targetMAC + "\",";
+	json += "\"timestamp\":\"" + getISOTime() + "\"";
+	json += "}";
+	server.send(200, "application/json", json);
 }
 
 void setup()
@@ -107,20 +129,30 @@ void setup()
 
 	if (!loadSettings())
 	{
-		while (true)
-		{
-			delay(1000);
-		}
+		ESP.restart();
+	}
+
+	checkWiFi();
+
+	if (WiFi.status() == WL_CONNECTED)
+	{
+		UDP.begin(9);
+		configTime(0, 0, "pool.ntp.org", "time.nist.gov");
 	}
 
 	WOL.setRepeat(3, 100);
-	server.on("/", handleWake);
+	server.on("/", handleRoot);
+	server.on("/wake", handleWake);
 	server.begin();
-	checkWiFi();
 }
 
 void loop()
 {
-	checkWiFi();
+	if (millis() - lastWiFiCheck > 10000)
+	{
+		checkWiFi();
+		lastWiFiCheck = millis();
+	}
+
 	server.handleClient();
 }

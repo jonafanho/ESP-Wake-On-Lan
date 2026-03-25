@@ -1,0 +1,33 @@
+name: Build
+on: [ pull_request, push, workflow_dispatch ]
+
+jobs:
+  build-platformio:
+    name: Build PlatformIO
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: esp32
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+      - name: Set up Python
+        uses: actions/setup-python@main
+        with:
+          python-version: "3.11"
+      - name: Cache PlatformIO and pip
+        uses: actions/cache@main
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio/.cache
+          key: ${{ runner.os }}-pio
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build
+        run: pio run
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@main
+        with:
+          name: ESP32-Firmware
+          path: esp32/.pio/build/esp32/firmware.*
